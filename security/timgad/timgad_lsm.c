@@ -18,11 +18,6 @@
 
 #include "timgad_core.h"
 
-enum {
-	TIMGAD_MOD_HARDEN_OFF	= 0,
-	TIMGAD_MOD_HARDEN_ON	= 1,
-};
-
 static int module_restrict;
 
 static int timgad_set_op_value(struct task_struct *tsk,
@@ -161,6 +156,7 @@ static struct ctl_table timgad_sysctl_table[] = {
 	},
 	{ }
 };
+
 static void __init timgad_init_sysctl(void)
 {
 	if (!register_sysctl_paths(timgad_sysctl_path, timgad_sysctl_table))

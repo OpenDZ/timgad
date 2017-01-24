@@ -19,12 +19,22 @@
 	((unsigned long) (TIMGAD_MOD_HARDEN |		\
 			  TIMGAD_MOD_HARDEN_STRICT))
 
+#define TIMGAD_MOD_HARDEN_OFF			0
+#define TIMGAD_MOD_HARDEN_ON			1
+
 struct timgad_task;
 
 static inline int timgad_op_to_flag(unsigned long op,
 				    unsigned long value,
 				    unsigned long *rvalue)
 {
+	int ret = -EINVAL;
+
+	if (op != PR_TIMGAD_SET_MOD_HARDEN || value > TIMGAD_MOD_HARDEN_STRICT)
+		return ret;
+
+	*rvalue = value;
+
 	return 0;
 }
 

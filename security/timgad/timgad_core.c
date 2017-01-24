@@ -69,20 +69,26 @@ void timgad_tasks_clean(void)
 	rhashtable_destroy(&timgad_tasks_table);
 }
 
-static int get_timgad_task_new_flags(unsigned long op, unsigned long used,
-				     unsigned long flag, int *new_flags)
+static inline int get_timgad_task_new_flags(unsigned long op, unsigned long used,
+					    unsigned long flag, int *new_flags)
 {
-	int ret = -EINVAL;
+	if (flag < used)
+		return -EPERM;
 
-	return ret;
+	*new_flags = flag;
+	return 0;
 }
 
-static int update_timgad_task_flags(struct timgad_task *timgad_tsk,
-				    unsigned long op, int new_flags)
+static inline int update_timgad_task_flags(struct timgad_task *timgad_tsk,
+					   unsigned long op, int new_flags)
 {
 	int ret = -EINVAL;
 
-	return ret;
+	if (op != PR_TIMGAD_SET_MOD_HARDEN)
+		return ret;
+
+	timgad_tsk->mod_harden = new_flags;
+	return 0;
 }
 
 int timgad_task_is_op_set(struct timgad_task *timgad_tsk, unsigned long op)
@@ -98,7 +104,11 @@ int timgad_task_set_op_flag(struct timgad_task *timgad_tsk, unsigned long op,
 {
 	int ret = -EINVAL;
 	int new_flag = 0;
-	int used = timgad_task_is_op_set(timgad_tsk, op);
+	int used;
+
+	used = timgad_task_is_op_set(timgad_tsk, op);
+	if (used < 0)
+		return used;
 
 	ret = get_timgad_task_new_flags(op, used, flag, &new_flag);
 	if (ret < 0)
