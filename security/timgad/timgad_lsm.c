@@ -63,11 +63,26 @@ static int timgad_get_op_value(struct task_struct *tsk, unsigned long op)
 
 int timgad_task_copy(struct task_struct *tsk)
 {
-	int ret = -EINVAL;
+	int ret = 0;
 	struct timgad_task *tparent;
-	struct timgad_task *ttask = NULL;
+	struct timgad_task *ttask;
+	unsigned long value = 0;
 
+	tparent = get_timgad_task(current);
 
+	/* Parent does not have a timgad context, nothing to do */
+	if (tparent == NULL)
+		return 0;
+
+	value = read_timgad_task_filter(tparent);
+
+	ttask = give_me_timgad_task(tsk, value);
+	if (IS_ERR(ttask))
+		ret = PTR_ERR(ttask);
+	else
+		ret = 0;
+
+	put_timgad_task(tparent);
 	return ret;
 }
 

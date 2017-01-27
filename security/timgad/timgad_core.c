@@ -69,6 +69,11 @@ void timgad_tasks_clean(void)
 	rhashtable_destroy(&timgad_tasks_table);
 }
 
+unsigned long read_timgad_task_filter(struct timgad_task *timgad_tsk)
+{
+	return timgad_tsk->mod_harden;
+}
+
 static inline int get_timgad_task_new_flags(unsigned long op, unsigned long used,
 					    unsigned long flag, int *new_flags)
 {
