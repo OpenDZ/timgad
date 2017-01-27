@@ -20,6 +20,7 @@
 
 static int module_restrict;
 
+/* Set the given option in a timgad task */
 static int timgad_set_op_value(struct task_struct *tsk,
 			       unsigned long op, unsigned long value)
 {
@@ -46,6 +47,7 @@ static int timgad_set_op_value(struct task_struct *tsk,
 	return ret;
 }
 
+/* Get if the given option from a timgad task */
 static int timgad_get_op_value(struct task_struct *tsk, unsigned long op)
 {
 	int ret = -EINVAL;
@@ -61,6 +63,7 @@ static int timgad_get_op_value(struct task_struct *tsk, unsigned long op)
 	return ret;
 }
 
+/* Copy Timgad context from parent to child */
 int timgad_task_copy(struct task_struct *tsk)
 {
 	int ret = 0;
@@ -74,7 +77,7 @@ int timgad_task_copy(struct task_struct *tsk)
 	if (tparent == NULL)
 		return 0;
 
-	value = read_timgad_task_filter(tparent);
+	value = read_timgad_task_flags(tparent);
 
 	ttask = give_me_timgad_task(tsk, value);
 	if (IS_ERR(ttask))
@@ -115,6 +118,7 @@ int timgad_task_prctl(int option, unsigned long arg2, unsigned long arg3,
 	return ret;
 }
 
+/* Free the specific task attached resources */
 void timgad_task_free(struct task_struct *task)
 {
 	struct timgad_task *ttask;

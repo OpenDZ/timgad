@@ -38,7 +38,7 @@ static inline int timgad_op_to_flag(unsigned long op,
 	return 0;
 }
 
-unsigned long read_timgad_task_filter(struct timgad_task *timgad_tsk);
+unsigned long read_timgad_task_flags(struct timgad_task *timgad_tsk);
 
 int timgad_task_set_op_flag(struct timgad_task *timgad_tsk,
 			    unsigned long op, unsigned long flag,

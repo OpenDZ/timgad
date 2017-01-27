@@ -48,6 +48,7 @@ static inline int cmp_timgad_task(struct rhashtable_compare_arg *arg,
 	return atomic_read(&ttask->usage) == 0 || ttask->key != key;
 }
 
+/* TODO: optimize me */
 static const struct rhashtable_params timgad_tasks_params = {
 	.nelem_hint = 1024,
 	.head_offset = offsetof(struct timgad_task, node),
@@ -69,7 +70,7 @@ void timgad_tasks_clean(void)
 	rhashtable_destroy(&timgad_tasks_table);
 }
 
-unsigned long read_timgad_task_filter(struct timgad_task *timgad_tsk)
+unsigned long read_timgad_task_flags(struct timgad_task *timgad_tsk)
 {
 	return timgad_tsk->mod_harden;
 }
