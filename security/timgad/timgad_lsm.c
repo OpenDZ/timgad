@@ -102,7 +102,7 @@ int timgad_task_prctl(int option, unsigned long arg2, unsigned long arg3,
 	struct task_struct *myself = current;
 
 	if (option != PR_TIMGAD_OPTS)
-		return ret;
+		return 0;
 
 	get_task_struct(myself);
 

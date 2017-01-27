@@ -39,7 +39,7 @@ struct timgad_task {
 
 static struct rhashtable timgad_tasks_table;
 
-static inline int cmp_timgad_task(struct rhashtable_compare_arg *arg,
+static inline int _cmp_timgad_task(struct rhashtable_compare_arg *arg,
 				  const void *obj)
 {
 	const unsigned long key = *(unsigned long *)arg->key;
@@ -50,13 +50,13 @@ static inline int cmp_timgad_task(struct rhashtable_compare_arg *arg,
 
 /* TODO: optimize me */
 static const struct rhashtable_params timgad_tasks_params = {
-	.nelem_hint = 1024,
+	.nelem_hint = 192,
 	.head_offset = offsetof(struct timgad_task, node),
 	.key_offset = offsetof(struct timgad_task, key),
 	.key_len = sizeof(unsigned long),
-	.max_size = 16384,
+	.max_size = 8192,
 	.min_size = 256,
-	.obj_cmpfn = cmp_timgad_task,
+	.obj_cmpfn = _cmp_timgad_task,
 	.automatic_shrinking = true,
 };
 
@@ -168,13 +168,14 @@ int insert_timgad_task(struct timgad_task *timgad_tsk)
 	int ret;
 
 	atomic_inc(&timgad_tsk->usage);
-	ret = rhashtable_lookup_insert_key(&timgad_tasks_table,
-					   timgad_tsk->task, &timgad_tsk->node,
-					   timgad_tasks_params);
-	if (ret)
+	ret = rhashtable_insert_fast(&timgad_tasks_table,
+				     &timgad_tsk->node, timgad_tasks_params);
+	if (ret != 0 && ret != -EEXIST) {
 		atomic_dec(&timgad_tsk->usage);
+		return ret;
+	}
 
-	return ret;
+	return 0;
 }
 
 static void reclaim_timgad_task(struct work_struct *work)
