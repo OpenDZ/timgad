@@ -12,9 +12,11 @@
  *
  */
 
+#include <linux/errno.h>
 #include <linux/lsm_hooks.h>
 #include <linux/sysctl.h>
 #include <linux/prctl.h>
+#include <linux/types.h>
 
 #include "timgad_core.h"
 
