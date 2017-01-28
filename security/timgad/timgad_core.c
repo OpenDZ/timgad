@@ -148,7 +148,12 @@ struct timgad_task *get_timgad_task(struct task_struct *tsk)
 
 void put_timgad_task(struct timgad_task *timgad_tsk)
 {
-	if (timgad_tsk && atomic_dec_and_test(&timgad_tsk->usage))
+	if (!timgad_tsk)
+		return;
+
+	/* First check if we have not been interrupted */
+	if ((atomic_read(&timgad_tsk->usage) == 0) ||
+	    atomic_dec_and_test(&timgad_tsk->usage))
 		schedule_work(&timgad_tsk->clean_work);
 }
 

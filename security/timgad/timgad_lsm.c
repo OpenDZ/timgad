@@ -120,7 +120,8 @@ int timgad_task_prctl(int option, unsigned long arg2, unsigned long arg3,
 	return ret;
 }
 
-/* Free the specific task attached resources */
+/* Free the specific task attached resources
+ * task_free() can be called from interrupt context */
 void timgad_task_free(struct task_struct *task)
 {
 	struct timgad_task *ttask;
