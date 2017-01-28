@@ -32,7 +32,7 @@ struct timgad_task {
 
 	struct task_struct *task;
 
-	int mod_harden:2;
+	int flags:2;
 
 	struct work_struct clean_work;
 };
@@ -72,7 +72,7 @@ void timgad_tasks_clean(void)
 
 unsigned long read_timgad_task_flags(struct timgad_task *timgad_tsk)
 {
-	return timgad_tsk->mod_harden;
+	return timgad_tsk->flags;
 }
 
 static inline int get_timgad_task_new_flags(unsigned long op, unsigned long used,
@@ -93,16 +93,16 @@ static inline int update_timgad_task_flags(struct timgad_task *timgad_tsk,
 	if (op != PR_TIMGAD_SET_MOD_HARDEN)
 		return ret;
 
-	timgad_tsk->mod_harden = new_flags;
+	timgad_tsk->flags = new_flags;
 	return 0;
 }
 
 int timgad_task_is_op_set(struct timgad_task *timgad_tsk, unsigned long op)
 {
-	if (op == PR_TIMGAD_SET_MOD_HARDEN)
-		return timgad_tsk->mod_harden;
+	if (op != PR_TIMGAD_SET_MOD_HARDEN)
+		return -EINVAL;
 
-	return -EINVAL;
+	return timgad_tsk->flags;
 }
 
 int timgad_task_set_op_flag(struct timgad_task *timgad_tsk, unsigned long op,
@@ -206,7 +206,7 @@ struct timgad_task *init_timgad_task(struct task_struct *tsk,
 		return ERR_PTR(-ENOMEM);
 
 	ttask->task = tsk;
-	ttask->mod_harden = value;
+	ttask->flags = value;
 
 	atomic_set(&ttask->usage, 0);
 	INIT_WORK(&ttask->clean_work, reclaim_timgad_task);
