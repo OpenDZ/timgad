@@ -70,7 +70,7 @@ static inline int _cmp_timgad_task(struct rhashtable_compare_arg *arg,
 
 /* TODO: optimize me */
 static const struct rhashtable_params timgad_tasks_hash_params = {
-	.nelem_hint = 192,
+	.nelem_hint = 512,
 	.head_offset = offsetof(struct timgad_task, t_rhash_head),
 	.key_offset = offsetof(struct timgad_task, key),
 	.key_len = sizeof(unsigned long),
