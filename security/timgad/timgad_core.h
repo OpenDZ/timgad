@@ -3,7 +3,7 @@
  *
  * Author: Djalal Harouni
  *
- * Copyright (c) 2016 Djalal Harouni
+ * Copyright (c) 2017 Djalal Harouni
  * Copyright (c) 2017 Endocode AG
  *
  * This program is free software; you can redistribute it and/or modify
@@ -12,12 +12,11 @@
  *
  */
 
+#define TIMGAD_MODULE_OFF	0x00000000
 #define TIMGAD_MODULE_STRICT	0x00000001
 #define TIMGAD_MODULE_NO_LOAD	0x00000002
 
 struct timgad_task;
-
-int atomic_read_counter(struct timgad_task *timgad_tsk);
 
 static inline int timgad_op_to_flag(unsigned long op,
 				    unsigned long value,

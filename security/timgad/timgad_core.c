@@ -3,8 +3,8 @@
  *
  * Author: Djalal Harouni
  *
+ * Copyright (c) 2017 Djalal Harouni
  * Copyright (C) 2017 Endocode AG.
- * Copyright (c) 2016 Djalal Harouni
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2, as
@@ -46,11 +46,6 @@ struct timgad_task {
 
 static struct rhashtable timgad_tasks_table;
 static DEFINE_SPINLOCK(timgad_tasks_lock);
-
-int atomic_read_counter(struct timgad_task *timgad_tsk)
-{
-	return atomic_read(&timgad_tsk->usage);
-}
 
 static inline int _cmp_timgad_task(struct rhashtable_compare_arg *arg,
 				   const void *obj)

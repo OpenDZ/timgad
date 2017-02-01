@@ -3,8 +3,8 @@
  *
  * Author: Djalal Harouni
  *
- * Copyright (C) 2017 Endocode AG.
  * Copyright (C) 2017 Djalal Harouni
+ * Copyright (C) 2017 Endocode AG.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2, as
@@ -35,7 +35,7 @@ static int timgad_has_global_sysctl_perm(unsigned long op)
 		return ret;
 
 	switch (module_restrict) {
-	case 0:
+	case TIMGAD_MODULE_OFF:
 		ret = 0;
 		break;
 	/* TODO: complete this and handle it later per task too */
@@ -75,11 +75,17 @@ static int module_timgad_task_perm(struct timgad_task *timgad_tsk,
 	 * TODO: complete me
 	 *    * Allow net modules only with CAP_NET_ADMIN and other cases...
 	 *    * Other exotic cases when set to STRICT should be denied...
+	 *    * Inline logic
 	 */
 	switch (flag) {
+	case TIMGAD_MODULE_OFF:
+		ret = 0;
+		break;
 	case TIMGAD_MODULE_STRICT:
 		if (!capable(CAP_SYS_MODULE))
 			ret = -EPERM;
+		else
+			ret = 0;
 		break;
 	case TIMGAD_MODULE_NO_LOAD:
 		ret = -EPERM;
