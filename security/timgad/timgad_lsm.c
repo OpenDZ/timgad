@@ -22,6 +22,73 @@
 
 static int module_restrict;
 
+static int zero;
+static int max_module_restrict_scope = TIMGAD_MODULE_NO_LOAD;
+
+/* TODO: complete permission check */
+static int timgad_has_global_sysctl_perm(unsigned long op)
+{
+	int ret = -EINVAL;
+	struct mm_struct *mm;
+
+	if (op != PR_TIMGAD_GET_MOD_RESTRICT)
+		return ret;
+
+	switch (module_restrict) {
+	case 0:
+		ret = 0;
+		break;
+	/* TODO: complete this and handle it later per task too */
+	case TIMGAD_MODULE_STRICT:
+		/* Are we allowed to sleep here ? */
+		mm = get_task_mm(current);
+		if (mm) {
+			if (capable(CAP_SYS_MODULE))
+				ret = 0;
+			else
+				ret = -EPERM;
+			mmput(mm);
+		} else
+			ret = 0;
+		break;
+	case TIMGAD_MODULE_NO_LOAD:
+		ret = -EPERM;
+		break;
+	}
+
+	return ret;
+}
+
+/* TODO: simplify me and move me to timgad_core.c file */
+static int module_timgad_task_perm(struct timgad_task *timgad_tsk,
+				   char *kmod_name)
+{
+	int ret;
+	unsigned long flag = 0;
+
+	ret = is_timgad_task_op_set(timgad_tsk,
+				    PR_TIMGAD_SET_MOD_RESTRICT, &flag);
+	if (ret < 0)
+		return ret;
+
+	/*
+	 * TODO: complete me
+	 *    * Allow net modules only with CAP_NET_ADMIN and other cases...
+	 *    * Other exotic cases when set to STRICT should be denied...
+	 */
+	switch (flag) {
+	case TIMGAD_MODULE_STRICT:
+		if (!capable(CAP_SYS_MODULE))
+			ret = -EPERM;
+		break;
+	case TIMGAD_MODULE_NO_LOAD:
+		ret = -EPERM;
+		break;
+	}
+
+	return ret;
+}
+
 /* Set the given option in a timgad task */
 static int timgad_set_op_value(struct task_struct *tsk,
 			       unsigned long op, unsigned long value)
@@ -45,24 +112,25 @@ static int timgad_set_op_value(struct task_struct *tsk,
 
 	ret = timgad_task_set_op_flag(ttask, op, flag, value);
 
-	put_timgad_task(ttask);
+	put_timgad_task(ttask, NULL);
 	return ret;
 }
 
-/* Get if the given option from a timgad task */
+/* Get the given option from a timgad task */
 static int timgad_get_op_value(struct task_struct *tsk, unsigned long op)
 {
 	int ret = -EINVAL;
 	struct timgad_task *ttask;
+	unsigned long flag = 0;
 
 	ttask = get_timgad_task(tsk);
 	if (!ttask)
 		return ret;
 
-	ret = timgad_task_is_op_set(ttask, op);
-	put_timgad_task(ttask);
+	ret = is_timgad_task_op_set(ttask, op, &flag);
+	put_timgad_task(ttask, NULL);
 
-	return ret;
+	return ret < 0 ? ret : flag;
 }
 
 /* Copy Timgad context from parent to child */
@@ -87,7 +155,7 @@ int timgad_task_copy(struct task_struct *tsk)
 	else
 		ret = 0;
 
-	put_timgad_task(tparent);
+	put_timgad_task(tparent, NULL);
 	return ret;
 }
 
@@ -107,33 +175,87 @@ int timgad_task_prctl(int option, unsigned long arg2, unsigned long arg3,
 	get_task_struct(myself);
 
 	switch (arg2) {
-	case PR_TIMGAD_SET_MOD_HARDEN:
-		ret = timgad_set_op_value(myself, PR_TIMGAD_SET_MOD_HARDEN, arg3);
+	case PR_TIMGAD_SET_MOD_RESTRICT:
+		ret = timgad_set_op_value(myself,
+					  PR_TIMGAD_SET_MOD_RESTRICT,
+					  arg3);
 		break;
-	case PR_TIMGAD_GET_MOD_HARDEN:
-		ret = timgad_get_op_value(myself, PR_TIMGAD_SET_MOD_HARDEN);
+	case PR_TIMGAD_GET_MOD_RESTRICT:
+		ret = timgad_get_op_value(myself,
+					  PR_TIMGAD_SET_MOD_RESTRICT);
 		break;
 	}
 
 	put_task_struct(myself);
+	return ret;
+}
+
+/*
+ * Free the specific task attached resources
+ * task_free() can be called from interrupt context
+ */
+void timgad_task_free(struct task_struct *tsk)
+{
+	release_timgad_task(tsk);
+}
+
+static int timgad_kernel_module_file(struct file *file)
+{
+	int ret = 0;
+	struct timgad_task *ttask;
+
+	ret = timgad_has_global_sysctl_perm(PR_TIMGAD_GET_MOD_RESTRICT);
+	if (ret < 0)
+		return ret;
+
+	ttask = get_timgad_task(current);
+	if (ttask == NULL)
+		return 0;
+
+	ret = module_timgad_task_perm(ttask, NULL);
+	put_timgad_task(ttask, NULL);
 
 	return ret;
 }
 
-/* Free the specific task attached resources
- * task_free() can be called from interrupt context */
-void timgad_task_free(struct task_struct *task)
+static int timgad_kernel_module_request(char *kmod_name)
 {
+	int ret;
 	struct timgad_task *ttask;
 
-	ttask = lookup_timgad_task(task);
-	if (!ttask)
-		return;
+	ret = timgad_has_global_sysctl_perm(PR_TIMGAD_GET_MOD_RESTRICT);
+	if (ret < 0);
+		return ret;
 
-	put_timgad_task(ttask);
+	ttask = get_timgad_task(current);
+	if (ttask == NULL)
+		return 0;
+
+	ret = module_timgad_task_perm(ttask, kmod_name);
+	put_timgad_task(ttask, NULL);
+
+	return ret;
+}
+
+static int timgad_kernel_read_file(struct file *file,
+				   enum kernel_read_file_id id)
+{
+	int ret = 0;
+
+	switch (id) {
+	case READING_MODULE:
+		ret = timgad_kernel_module_file(file);
+		break;
+	default:
+		break;
+	}
+
+	return ret;
 }
 
 static struct security_hook_list timgad_hooks[] = {
+	LSM_HOOK_INIT(kernel_module_request, timgad_kernel_module_request),
+	LSM_HOOK_INIT(kernel_read_file, timgad_kernel_read_file),
 	LSM_HOOK_INIT(task_copy, timgad_task_copy),
 	LSM_HOOK_INIT(task_prctl, timgad_task_prctl),
 	LSM_HOOK_INIT(task_free, timgad_task_free),
@@ -149,16 +271,12 @@ static int timgad_mod_dointvec_minmax(struct ctl_table *table, int write,
 	if (write && !capable(CAP_SYS_MODULE))
 		return -EPERM;
 
-	/* Lock the max value if it ever gets set. */
 	table_copy = *table;
 	if (*(int *)table_copy.data == *(int *)table_copy.extra2)
 		table_copy.extra1 = table_copy.extra2;
 
 	return proc_dointvec_minmax(&table_copy, write, buffer, lenp, ppos);
 }
-
-static int zero;
-static int max_module_restrict_scope = TIMGAD_MOD_HARDEN_ON;
 
 struct ctl_path timgad_sysctl_path[] = {
 	{ .procname = "kernel", },

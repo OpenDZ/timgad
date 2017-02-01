@@ -12,29 +12,21 @@
  *
  */
 
-#define TIMGAD_MOD_HARDEN			0x00000001
-#define TIMGAD_MOD_HARDEN_STRICT		0x00000002
-
-#define TIMGAD_OPTS_ALL					\
-	((unsigned long) (TIMGAD_MOD_HARDEN |		\
-			  TIMGAD_MOD_HARDEN_STRICT))
-
-#define TIMGAD_MOD_HARDEN_OFF			0
-#define TIMGAD_MOD_HARDEN_ON			1
+#define TIMGAD_MODULE_STRICT	0x00000001
+#define TIMGAD_MODULE_NO_LOAD	0x00000002
 
 struct timgad_task;
 
+int atomic_read_counter(struct timgad_task *timgad_tsk);
+
 static inline int timgad_op_to_flag(unsigned long op,
 				    unsigned long value,
-				    unsigned long *rvalue)
+				    unsigned long *flag)
 {
-	int ret = -EINVAL;
+	if (op != PR_TIMGAD_SET_MOD_RESTRICT || value > TIMGAD_MODULE_NO_LOAD)
+		return -EINVAL;
 
-	if (op != PR_TIMGAD_SET_MOD_HARDEN || value > TIMGAD_MOD_HARDEN_STRICT)
-		return ret;
-
-	*rvalue = value;
-
+	*flag = value;
 	return 0;
 }
 
@@ -44,12 +36,14 @@ int timgad_task_set_op_flag(struct timgad_task *timgad_tsk,
 			    unsigned long op, unsigned long flag,
 			    unsigned long value);
 
-int timgad_task_is_op_set(struct timgad_task *timgad_tsk, unsigned long op);
+int is_timgad_task_op_set(struct timgad_task *timgad_tsk, unsigned long op,
+			  unsigned long *flag);
 
 struct timgad_task *get_timgad_task(struct task_struct *tsk);
-void put_timgad_task(struct timgad_task *timgad_tsk);
+void put_timgad_task(struct timgad_task *timgad_tsk, bool *collect);
 struct timgad_task *lookup_timgad_task(struct task_struct *tsk);
-int insert_timgad_task(struct timgad_task *timgad_tsk);
+
+void release_timgad_task(struct task_struct *tsk);
 
 struct timgad_task *init_timgad_task(struct task_struct *tsk,
 				     unsigned long flag);

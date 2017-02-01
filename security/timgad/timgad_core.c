@@ -24,34 +24,54 @@
 #include <linux/types.h>
 #include <linux/workqueue.h>
 
-struct timgad_task {
-	atomic_t usage;
+enum {
+	TIMGAD_TASK_INITIALIZED = 0,	/* Initialized, not active */
+	TIMGAD_TASK_ACTIVE = 1,		/* Linked in hash, active */
+	TIMGAD_TASK_INVALID = -1,	/* Scheduled to be removed from hash */
+};
 
-	struct rhash_head node;
+struct timgad_task_map {
+	unsigned long key_addr;
+};
+
+struct timgad_task {
+	struct rhash_head t_rhash_head;	/* timgad task hash node */
 	unsigned long key;
 
-	struct task_struct *task;
-
-	int flags:2;
+	atomic_t usage;
+	u32 flags;
 
 	struct work_struct clean_work;
 };
 
 static struct rhashtable timgad_tasks_table;
+static DEFINE_SPINLOCK(timgad_tasks_lock);
+
+int atomic_read_counter(struct timgad_task *timgad_tsk)
+{
+	return atomic_read(&timgad_tsk->usage);
+}
 
 static inline int _cmp_timgad_task(struct rhashtable_compare_arg *arg,
-				  const void *obj)
+				   const void *obj)
 {
-	const unsigned long key = *(unsigned long *)arg->key;
+	const struct timgad_task_map *tmap = arg->key;
 	const struct timgad_task *ttask = obj;
 
-	return atomic_read(&ttask->usage) == 0 || ttask->key != key;
+	if (ttask->key != tmap->key_addr)
+		return 1;
+
+	/* Did we hit an entry that was invalidated ? */
+	if (atomic_read(&ttask->usage) == TIMGAD_TASK_INVALID)
+		return 1;
+
+	return 0;
 }
 
 /* TODO: optimize me */
-static const struct rhashtable_params timgad_tasks_params = {
+static const struct rhashtable_params timgad_tasks_hash_params = {
 	.nelem_hint = 192,
-	.head_offset = offsetof(struct timgad_task, node),
+	.head_offset = offsetof(struct timgad_task, t_rhash_head),
 	.key_offset = offsetof(struct timgad_task, key),
 	.key_len = sizeof(unsigned long),
 	.max_size = 8192,
@@ -62,7 +82,7 @@ static const struct rhashtable_params timgad_tasks_params = {
 
 int timgad_tasks_init(void)
 {
-	return rhashtable_init(&timgad_tasks_table, &timgad_tasks_params);
+	return rhashtable_init(&timgad_tasks_table, &timgad_tasks_hash_params);
 }
 
 void timgad_tasks_clean(void)
@@ -75,53 +95,56 @@ unsigned long read_timgad_task_flags(struct timgad_task *timgad_tsk)
 	return timgad_tsk->flags;
 }
 
-static inline int get_timgad_task_new_flags(unsigned long op, unsigned long used,
-					    unsigned long flag, int *new_flags)
+static inline int new_timgad_task_flags(unsigned long op,
+					unsigned long used_flag,
+					unsigned long passed_flag,
+					unsigned long *new_flag)
 {
-	if (flag < used)
+	if (passed_flag < used_flag)
 		return -EPERM;
 
-	*new_flags = flag;
+	*new_flag = passed_flag;
 	return 0;
 }
 
 static inline int update_timgad_task_flags(struct timgad_task *timgad_tsk,
-					   unsigned long op, int new_flags)
+					   unsigned long op,
+					   unsigned long new_flag)
 {
-	int ret = -EINVAL;
+	if (op != PR_TIMGAD_SET_MOD_RESTRICT)
+		return -EINVAL;
 
-	if (op != PR_TIMGAD_SET_MOD_HARDEN)
-		return ret;
-
-	timgad_tsk->flags = new_flags;
+	timgad_tsk->flags = new_flag;
 	return 0;
 }
 
-int timgad_task_is_op_set(struct timgad_task *timgad_tsk, unsigned long op)
+int is_timgad_task_op_set(struct timgad_task *timgad_tsk, unsigned long op,
+			  unsigned long *flag)
 {
-	if (op != PR_TIMGAD_SET_MOD_HARDEN)
+	if (op != PR_TIMGAD_SET_MOD_RESTRICT)
 		return -EINVAL;
 
-	return timgad_tsk->flags;
+	*flag = timgad_tsk->flags;
+	return 0;
 }
 
 int timgad_task_set_op_flag(struct timgad_task *timgad_tsk, unsigned long op,
 			    unsigned long flag, unsigned long value)
 {
-	int ret = -EINVAL;
-	int new_flag = 0;
-	int used;
+	int ret;
+	unsigned long new_flag = 0;
+	unsigned long used_flag;
 
-	used = timgad_task_is_op_set(timgad_tsk, op);
-	if (used < 0)
-		return used;
-
-	ret = get_timgad_task_new_flags(op, used, flag, &new_flag);
+	ret = is_timgad_task_op_set(timgad_tsk, op, &used_flag);
 	if (ret < 0)
 		return ret;
 
-	/* Nothing to do if new flag did not change */
-	if (new_flag == used)
+	ret = new_timgad_task_flags(op, used_flag, flag, &new_flag);
+	if (ret < 0)
+		return ret;
+
+	/* Nothing to do if the flag did not change */
+	if (new_flag == used_flag)
 		return 0;
 
 	return update_timgad_task_flags(timgad_tsk, op, new_flag);
@@ -129,10 +152,37 @@ int timgad_task_set_op_flag(struct timgad_task *timgad_tsk, unsigned long op,
 
 static struct timgad_task *__lookup_timgad_task(struct task_struct *tsk)
 {
-	return rhashtable_lookup_fast(&timgad_tasks_table, tsk,
-				      timgad_tasks_params);
+	struct timgad_task_map tmap = { .key_addr = (unsigned long)(uintptr_t)tsk };
+
+	return rhashtable_lookup_fast(&timgad_tasks_table, &tmap,
+				      timgad_tasks_hash_params);
 }
 
+static inline struct timgad_task *__get_timgad_task(struct timgad_task *timgad_tsk)
+{
+	if (atomic_inc_not_zero(&timgad_tsk->usage))
+		return timgad_tsk;
+
+	return NULL;
+}
+
+static inline void __put_timgad_task(struct timgad_task *timgad_tsk,
+				     bool *collect)
+{
+	/* First check if we have not been interrupted */
+	if (atomic_read(&timgad_tsk->usage) <= TIMGAD_TASK_INITIALIZED ||
+	    atomic_dec_and_test(&timgad_tsk->usage)) {
+		if (collect)
+			*collect = true;
+		/*
+		 * Invalidate entry as early as possible so we
+		 * do not collide
+		 */
+		atomic_set(&timgad_tsk->usage, TIMGAD_TASK_INVALID);
+	}
+}
+
+/* We do take a reference count */
 struct timgad_task *get_timgad_task(struct task_struct *tsk)
 {
 	struct timgad_task *ttask;
@@ -140,23 +190,22 @@ struct timgad_task *get_timgad_task(struct task_struct *tsk)
 	rcu_read_lock();
 	ttask = __lookup_timgad_task(tsk);
 	if (ttask)
-		atomic_inc(&ttask->usage);
+		ttask = __get_timgad_task(ttask);
 	rcu_read_unlock();
 
 	return ttask;
 }
 
-void put_timgad_task(struct timgad_task *timgad_tsk)
+void put_timgad_task(struct timgad_task *timgad_tsk, bool *collect)
 {
-	if (!timgad_tsk)
-		return;
-
-	/* First check if we have not been interrupted */
-	if ((atomic_read(&timgad_tsk->usage) == 0) ||
-	    atomic_dec_and_test(&timgad_tsk->usage))
-		schedule_work(&timgad_tsk->clean_work);
+	if (timgad_tsk)
+		__put_timgad_task(timgad_tsk, collect);
 }
 
+/*
+ * We return all timgad tasks that are not in the TIMGAD_TASK_INVALID state.
+ * We do not take reference count on timgad tasks here
+ */
 struct timgad_task *lookup_timgad_task(struct task_struct *tsk)
 {
 	struct timgad_task *ttask;
@@ -168,19 +217,43 @@ struct timgad_task *lookup_timgad_task(struct task_struct *tsk)
 	return ttask;
 }
 
-int insert_timgad_task(struct timgad_task *timgad_tsk)
+static int insert_timgad_task(struct timgad_task *timgad_tsk)
 {
 	int ret;
+	struct timgad_task *ttask = timgad_tsk;
 
-	atomic_inc(&timgad_tsk->usage);
+	/* TODO: improve me */
+	if (unlikely(atomic_read(&timgad_tasks_table.nelems) >= INT_MAX))
+		return -ENOMEM;
+
+	atomic_set(&ttask->usage, TIMGAD_TASK_ACTIVE);
+	spin_lock(&timgad_tasks_lock);
 	ret = rhashtable_insert_fast(&timgad_tasks_table,
-				     &timgad_tsk->node, timgad_tasks_params);
+				     &timgad_tsk->t_rhash_head,
+				     timgad_tasks_hash_params);
+	spin_unlock(&timgad_tasks_lock);
 	if (ret != 0 && ret != -EEXIST) {
-		atomic_dec(&timgad_tsk->usage);
+		atomic_set(&ttask->usage, TIMGAD_TASK_INITIALIZED);
 		return ret;
 	}
 
 	return 0;
+}
+
+void release_timgad_task(struct task_struct *tsk)
+{
+	struct timgad_task *ttask;
+	bool reclaim = false;
+
+	rcu_read_lock();
+	/* We do not take a ref count here */
+	ttask = __lookup_timgad_task(tsk);
+	if (ttask)
+		put_timgad_task(ttask, &reclaim);
+	rcu_read_unlock();
+
+	if (reclaim)
+		schedule_work(&ttask->clean_work);
 }
 
 static void reclaim_timgad_task(struct work_struct *work)
@@ -188,10 +261,12 @@ static void reclaim_timgad_task(struct work_struct *work)
 	struct timgad_task *ttask = container_of(work, struct timgad_task,
 						 clean_work);
 
-	WARN_ON(atomic_read(&ttask->usage) != 0);
+	WARN_ON(atomic_read(&ttask->usage) != TIMGAD_TASK_INVALID);
 
-	rhashtable_remove_fast(&timgad_tasks_table, &ttask->node,
-			       timgad_tasks_params);
+	spin_lock(&timgad_tasks_lock);
+	rhashtable_remove_fast(&timgad_tasks_table, &ttask->t_rhash_head,
+			       timgad_tasks_hash_params);
+	spin_unlock(&timgad_tasks_lock);
 
 	kfree(ttask);
 }
@@ -205,10 +280,10 @@ struct timgad_task *init_timgad_task(struct task_struct *tsk,
 	if (ttask == NULL)
 		return ERR_PTR(-ENOMEM);
 
-	ttask->task = tsk;
+	ttask->key = (unsigned long)(uintptr_t)tsk;
 	ttask->flags = value;
 
-	atomic_set(&ttask->usage, 0);
+	atomic_set(&ttask->usage, TIMGAD_TASK_INITIALIZED);
 	INIT_WORK(&ttask->clean_work, reclaim_timgad_task);
 
 	return ttask;
