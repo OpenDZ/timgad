@@ -25,7 +25,10 @@ static int module_restrict;
 static int zero;
 static int max_module_restrict_scope = TIMGAD_MODULE_NO_LOAD;
 
-/* TODO: complete permission check */
+/* TODO:
+ *  complete permission check
+ *  inline function logic with the per-process if possible
+ */
 static int timgad_has_global_sysctl_perm(unsigned long op)
 {
 	int ret = -EINVAL;
@@ -40,7 +43,10 @@ static int timgad_has_global_sysctl_perm(unsigned long op)
 		break;
 	/* TODO: complete this and handle it later per task too */
 	case TIMGAD_MODULE_STRICT:
-		/* Are we allowed to sleep here ? */
+		/*
+		 * Are we allowed to sleep here ?
+		 * Also improve this check here
+		 */
 		mm = get_task_mm(current);
 		if (mm) {
 			if (capable(CAP_SYS_MODULE))
