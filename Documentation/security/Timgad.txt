@@ -53,6 +53,7 @@ First the global sysctl settings are checked, if the access is not
 denied then the per-process settings are checked.
 
 
-The original idea and inspiration is from grsecurity mod_harden.
+The original idea and inspiration is from grsecurity
+'GRKERNSEC_MODHARDEN'
 
 ==============================================================
