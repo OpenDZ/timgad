@@ -32,7 +32,7 @@ static int max_module_restrict_scope = TIMGAD_MODULE_NO_LOAD;
 static int timgad_has_global_sysctl_perm(unsigned long op)
 {
 	int ret = -EINVAL;
-	struct mm_struct *mm;
+	struct mm_struct *mm = NULL;
 
 	if (op != PR_TIMGAD_GET_MOD_RESTRICT)
 		return ret;
@@ -47,15 +47,13 @@ static int timgad_has_global_sysctl_perm(unsigned long op)
 		 * Are we allowed to sleep here ?
 		 * Also improve this check here
 		 */
+		ret = -EPERM;
 		mm = get_task_mm(current);
 		if (mm) {
 			if (capable(CAP_SYS_MODULE))
 				ret = 0;
-			else
-				ret = -EPERM;
 			mmput(mm);
-		} else
-			ret = 0;
+		}
 		break;
 	case TIMGAD_MODULE_NO_LOAD:
 		ret = -EPERM;
@@ -215,38 +213,38 @@ static int timgad_kernel_module_file(struct file *file)
 {
 	int ret = 0;
 	struct timgad_task *ttask;
+	struct task_struct *myself = current;
 
-	ret = timgad_has_global_sysctl_perm(PR_TIMGAD_GET_MOD_RESTRICT);
+	/* First check if the task allows that */
+	ttask = get_timgad_task(myself);
+	if (ttask != NULL) {
+		ret = module_timgad_task_perm(ttask, NULL);
+		put_timgad_task(ttask, NULL);
+	}
+
 	if (ret < 0)
 		return ret;
 
-	ttask = get_timgad_task(current);
-	if (ttask == NULL)
-		return 0;
-
-	ret = module_timgad_task_perm(ttask, NULL);
-	put_timgad_task(ttask, NULL);
-
-	return ret;
+	return timgad_has_global_sysctl_perm(PR_TIMGAD_GET_MOD_RESTRICT);
 }
 
 static int timgad_kernel_module_request(char *kmod_name)
 {
-	int ret;
+	int ret = 0;
 	struct timgad_task *ttask;
+	struct task_struct *myself = current;
 
-	ret = timgad_has_global_sysctl_perm(PR_TIMGAD_GET_MOD_RESTRICT);
-	if (ret < 0);
+	/* First check if the task allows that */
+	ttask = get_timgad_task(myself);
+	if (ttask != NULL) {
+		ret = module_timgad_task_perm(ttask, kmod_name);
+		put_timgad_task(ttask, NULL);
+	}
+
+	if (ret < 0)
 		return ret;
 
-	ttask = get_timgad_task(current);
-	if (ttask == NULL)
-		return 0;
-
-	ret = module_timgad_task_perm(ttask, kmod_name);
-	put_timgad_task(ttask, NULL);
-
-	return ret;
+	return timgad_has_global_sysctl_perm(PR_TIMGAD_GET_MOD_RESTRICT);
 }
 
 static int timgad_kernel_read_file(struct file *file,
