@@ -21,19 +21,6 @@ settings are inherited by children created by fork(2) and clone(2), and
 preserved across execve(2).
 
 
-*) The sysctl settings (writable only with CAP_SYS_MODULE) are:
-   /proc/sys/kernel/timgad/module_restrict
-
-0 - Classic module load and unload permissions, nothing changes.
-
-1 - Only processes with CAP_SYS_MODULE should be able to load and
-    unload modules. Processes with CAP_NET_ADMIN should be able to
-    load and unload only netdev aliased modules.
-
-2 - Modules can not be loaded nor unloaded. Once set, this sysctl value
-    cannot be changed.
-
-
 *) The per-process prctl() settings are:
    prctl(PR_TIMGAD_OPTS, PR_TIGMAD_SET_MOD_RESTRICT, value, 0, 0)
 
@@ -48,9 +35,21 @@ preserved across execve(2).
 2 - Current process can not loaded nor unloaded modules.
 
 
+*) The sysctl settings (writable only with CAP_SYS_MODULE) are:
+   /proc/sys/kernel/timgad/module_restrict
+
+0 - Classic module load and unload permissions, nothing changes.
+
+1 - Only processes with CAP_SYS_MODULE should be able to load and
+    unload modules. Processes with CAP_NET_ADMIN should be able to
+    load and unload only netdev aliased modules.
+
+2 - Modules can not be loaded nor unloaded. Once set, this sysctl value
+    cannot be changed.
+
 Rules:
-First the global sysctl settings are checked, if the access is not
-denied then the per-process settings are checked.
+First the prctl() settings are checked, if the access is not denied
+then the global sysctl settings are checked.
 
 
 The original idea and inspiration is from grsecurity
